@@ -1,5 +1,6 @@
 package com.auth.model;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -27,7 +29,8 @@ public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id; // Maps to BIGINT in DB
+    @Column(name = "user_id")
+    private Long userId;
 
     @Column(unique = true, nullable = false)
     private String username;
@@ -37,6 +40,27 @@ public class User implements UserDetails {
 
     @Column(nullable = false)
     private String password;
+
+    @Column(name = "profile_name", length = 100)
+    private String profileName;
+
+    @Lob
+    @Column(name = "profile_picture_blob")
+    private byte[] profilePictureBlob;
+
+    @Column(name = "bio", length = 255)
+    private String bio;
+
+    @Builder.Default
+    @Column(name = "is_online", nullable = false)
+    private boolean isOnline = false;
+
+    @Column(name = "last_seen_timestamp")
+    private Instant lastSeenTimestamp;
+
+    @Builder.Default
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

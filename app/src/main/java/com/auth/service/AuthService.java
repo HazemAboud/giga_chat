@@ -1,5 +1,6 @@
 package com.auth.service;
 
+import java.io.IOException;
 import java.time.Instant;
 
 import org.springframework.http.HttpStatus;
@@ -8,12 +9,14 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.auth.dto.AuthResponse;
 import com.auth.dto.LoginRequest;
 import com.auth.dto.RegisterRequest;
 import com.auth.dto.TokenRefreshRequest;
+import com.auth.dto.UpdateProfileRequest;
 import com.auth.model.RefreshToken;
 import com.auth.model.User;
 import com.auth.repository.RefreshTokenRepository;
@@ -96,5 +99,39 @@ public class AuthService {
         refreshTokenRepository.save(refreshToken);
 
         return new AuthResponse(accessToken, refreshToken.getToken());
+    }
+
+    @Transactional
+    public User updateProfile(User loggedInUser, UpdateProfileRequest request) {
+        User dbUser = userRepository.findById(loggedInUser.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (request.getUsername() != null && !request.getUsername().equals(dbUser.getUsername())) {
+            if (userRepository.existsByUsername(request.getUsername())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username already exists");
+            }
+            dbUser.setUsername(request.getUsername());
+        }
+
+        if (request.getProfileName() != null) {
+            dbUser.setProfileName(request.getProfileName());
+        }
+
+        if (request.getBio() != null) {
+            dbUser.setBio(request.getBio());
+        }
+
+        return userRepository.save(dbUser);
+    }
+
+    @Transactional
+    public void uploadAvatar(User loggedInUser, MultipartFile file) throws IOException {
+        User dbUser = userRepository.findById(loggedInUser.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // Store the image as a byte array (blob) directly in the database
+        // Assuming User model has a field like 'profilePictureBlob' of type byte[]
+        dbUser.setProfilePictureBlob(file.getBytes());
+        userRepository.save(dbUser);
     }
 }

@@ -1,19 +1,26 @@
 package com.auth.controller;
 
+import java.io.IOException;
+
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.auth.dto.AuthResponse;
 import com.auth.dto.LoginRequest;
 import com.auth.dto.RegisterRequest;
 import com.auth.dto.TokenRefreshRequest;
+import com.auth.dto.UpdateProfileRequest;
+import com.auth.model.User;
 import com.auth.service.AuthService;
 
 import lombok.RequiredArgsConstructor;
-
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -27,22 +34,36 @@ public class AuthController {
         return ResponseEntity.ok(authService.register(request));
     }
 
-
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> authenticate(@RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
     }
-
 
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refreshToken(@RequestBody TokenRefreshRequest request) {
         return ResponseEntity.ok(authService.refreshToken(request));
     }
 
-
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@RequestBody TokenRefreshRequest request) {
         authService.logout(request.getRefreshToken());
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<User> updateProfile(
+            @AuthenticationPrincipal User loggedInUser,
+            @RequestBody UpdateProfileRequest request
+    ) {
+        return ResponseEntity.ok(authService.updateProfile(loggedInUser, request));
+    }
+
+    @PostMapping("/profile/avatar")
+    public ResponseEntity<Void> uploadAvatar(
+            @AuthenticationPrincipal User loggedInUser,
+            @RequestParam("file") MultipartFile file
+    ) throws IOException {
+        authService.uploadAvatar(loggedInUser, file);
+        return ResponseEntity.ok().build();
     }
 }
