@@ -2,6 +2,10 @@ package com.auth.service;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -133,5 +137,26 @@ public class AuthService {
         // Assuming User model has a field like 'profilePictureBlob' of type byte[]
         dbUser.setProfilePictureBlob(file.getBytes());
         userRepository.save(dbUser);
+    }
+
+    public byte[] getProfilePicture(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        
+        if (user.getProfilePictureBlob() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile picture not found for this user");
+        }
+        return user.getProfilePictureBlob();
+    }
+
+    public Map<Long, String> getProfilePicturesBase64(List<Long> userIds) {
+        List<User> users = userRepository.findAllById(userIds);
+        Map<Long, String> profilePictures = new HashMap<>();
+        for (User user : users) {
+            if (user.getProfilePictureBlob() != null) {
+                profilePictures.put(user.getUserId(), Base64.getEncoder().encodeToString(user.getProfilePictureBlob()));
+            }
+        }
+        return profilePictures;
     }
 }

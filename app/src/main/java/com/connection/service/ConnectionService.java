@@ -126,30 +126,29 @@ public class ConnectionService {
             throw new IllegalArgumentException("You cannot block yourself.");
         }
 
-        // 1. Check if the blocker has already blocked the target (directed block A -> B)
-        Optional<Connection> blockerBlock = connectionRepository.findByUserIdAndFriendId(blockerId, blockedId);
-        if (blockerBlock.isPresent() && "BLOCKED".equals(blockerBlock.get().getStatus())) {
-            // Already blocked by this user
-            return blockerBlock.get();
+        // 1. Check existing relationships in both directions
+        Optional<Connection> existingForward = connectionRepository.findByUserIdAndFriendId(blockerId, blockedId);
+        Optional<Connection> existingReverse = connectionRepository.findByUserIdAndFriendId(blockedId, blockerId);
+
+        // If already blocked by this user, return as-is
+        if (existingForward.isPresent() && "BLOCKED".equals(existingForward.get().getStatus())) {
+            return existingForward.get();
         }
 
-        // 2. Find any existing relationship in either direction that is NOT BLOCKED (i.e. PENDING, ACCEPTED, REJECTED)
-        Optional<Connection> conn1 = connectionRepository.findByUserIdAndFriendId(blockerId, blockedId);
-        Optional<Connection> conn2 = connectionRepository.findByUserIdAndFriendId(blockedId, blockerId);
-
-        conn1.ifPresent(conn -> {
+        // 2. Delete any non-blocked relationship in either direction
+        existingForward.ifPresent(conn -> {
             if (!"BLOCKED".equals(conn.getStatus())) {
                 connectionRepository.delete(conn);
-                connectionRepository.flush(); // Flush deletion immediately
             }
         });
 
-        conn2.ifPresent(conn -> {
+        existingReverse.ifPresent(conn -> {
             if (!"BLOCKED".equals(conn.getStatus())) {
                 connectionRepository.delete(conn);
-                connectionRepository.flush(); // Flush deletion immediately
             }
         });
+
+        connectionRepository.flush();
 
         // 3. Create the new directed block relation from blocker to blocked
         Connection newBlock = Connection.builder()

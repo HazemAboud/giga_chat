@@ -2,6 +2,7 @@ package com.chat.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.ServerTimestamp;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -20,6 +21,8 @@ public class Message {
     private String messageId;
     private Long senderId;
     private Long receiverId;
+
+    @ServerTimestamp
     private Timestamp timestamp;
 
 }
