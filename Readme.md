@@ -1,118 +1,220 @@
 # GigaChat Backend API Integration Guide
 
-This document provides the necessary details for frontend developers to integrate with the GigaChat API.
+**Base URL:** `http://localhost:8080/api/v1`
+
+---
 
 ## 1. Authentication
-The backend uses JWT (JSON Web Tokens) for security. Most endpoints require an `Authorization` header.
 
-**Header Format:** `Authorization: Bearer <access_token>`
+All endpoints except `/auth/**` require JWT bearer auth.
 
-### Auth Endpoints (Inferred from AuthService)
-| Method | Route | Description |
-|:--- |:--- |:--- |
-| POST | `/api/v1/auth/register` | Register a new user. |
-| POST | `/api/v1/auth/login` | Login and receive Access & Refresh tokens. |
-| POST | `/api/v1/auth/refresh` | Exchange a Refresh Token for a new Access Token. |
-| POST | `/api/v1/auth/logout` | Invalidate the current refresh token. |
-| PUT | `/api/v1/auth/profile` | Update profile (bio, profile name, username). |
-| POST | `/api/v1/auth/avatar` | Upload profile picture (Multipart/form-data). |
+**Header:** `Authorization: Bearer <access_token>`
 
----
+### Auth Endpoints (`/auth`)
 
-## 2. Connection Management
-Handled by `ConnController`, these routes manage friend requests and blocking.
+| Method | Route | Body | Description |
+|:---|:---|:---|:---|
+| POST | `/auth/register` | `RegisterRequest` | Create account. Returns `AuthResponse` (access + refresh tokens). |
+| POST | `/auth/login` | `LoginRequest` | Login. Returns `AuthResponse`. |
+| POST | `/auth/refresh` | `TokenRefreshRequest` | Exchange refresh token for new token pair. |
+| POST | `/auth/logout` | `TokenRefreshRequest` | Invalidate refresh token. Returns **204 No Content**. |
+| PUT | `/auth/profile` | `UpdateProfileRequest` | Update display name, username, bio. Returns updated `User`. |
+| POST | `/auth/profile/avatar` | `MultipartFile` (form field `file`) | Upload/change profile picture. |
 
-**Base URL:** `/api/v1/connections`
-
-| Method | Route | Body (JSON) | Description |
-|:--- |:--- |:--- |:--- |
-| POST | `/request` | `{ "friendId": Long }` | Send a friend request to a user. |
-| PUT | `/accept` | `{ "friendId": Long }` | Accept a received friend request. |
-| PUT | `/reject` | `{ "friendId": Long }` | Reject a received friend request. |
-| PUT | `/block` | `{ "friendId": Long }` | Block a specific user. |
-| PUT | `/unblock` | `{ "friendId": Long }` | Unblock a previously blocked user. |
-| GET | `/` | None | Get all connections for the logged-in user. |
-| GET | `/requests/sent` | None | Get all pending requests sent by you. |
-| GET | `/requests/received` | None | Get all pending requests sent to you. |
-
----
-
-## 3. Messaging (Firestore)
-Messages are stored in Google Cloud Firestore in a collection named `messages`.
-
-**Message Types:**
-- **TextMessage**: contains `textContent`.
-- **ImageMessage**: contains `imageBlob`.
-- **MixedMessage**: contains both `textContent` and `imageBlob`.
-
----
-
-## 4. Data Models & Entities
-
-### User Entity (Relational)
-| Field | Type | Description |
-|:--- |:--- |:--- |
-| `userId` | Long | Unique identifier. |
-| `username` | String | Unique login name. |
-| `email` | String | User email address. |
-| `password` | String | Hashed password. |
-| `profileName`| String | Display name. |
-| `bio` | String | User biography. |
-| `profilePictureBlob` | byte[] | Raw image data (returned as Base64 in some responses). |
-| `isOnline` | boolean | Current connection status. |
-| `lastSeenTimestamp` | Instant | Last activity timestamp. |
-| `createdAt` | Instant | Account creation timestamp. |
-
-### Connection Entity (Relational)
-| Field | Type | Description |
-|:--- |:--- |:--- |
-| `id` | Long | Connection ID. |
-| `userId` | Long | The user who initiated the relationship. |
-| `friendId` | Long | The target user. |
-| `status` | String | `PENDING`, `ACCEPTED`, `REJECTED`, `BLOCKED`. |
-| `createdAt` | Long | Epoch timestamp of creation. |
-| `updatedAt` | Long | Epoch timestamp of last update. |
-
-### Refresh Token Entity (Relational)
-| Field | Type | Description |
-|:--- |:--- |:--- |
-| `id` | Long | Unique identifier for the token record. |
-| `userId` | Long | Foreign key reference to the User. |
-| `token` | String | The unique refresh token string. |
-| `expiryDate` | Instant | Timestamp after which the token is invalid. |
-
-### Message Document (NoSQL - Firestore)
-| Field | Type | Description |
-|:--- |:--- |:--- |
-| `messageId` | String | Firestore Document ID. |
-| `senderId` | Long | User ID of the sender. |
-| `receiverId` | Long | User ID of the recipient. |
-| `timestamp` | Timestamp | Firestore server timestamp. |
-| `textContent`| String | (Optional) Text body. |
-| `imageBlob` | byte[] | (Optional) Raw image data (Base64 in JSON). |
-
----
-
-## 5. Error Handling
-The API returns standard HTTP status codes:
-- `200 OK` / `201 Created`: Success.
-- `400 Bad Request`: Validation error or business logic violation (e.g., "Cannot send request to yourself").
-- `401 Unauthorized`: Missing or expired token.
-- `403 Forbidden`: Authenticated but lacks permission.
-- `404 Not Found`: Resource does not exist.
-
-### Example Error Response
+**`AuthResponse`** shape:
 ```json
 {
-  "timestamp": "2023-10-27T10:00:00.000+00:00",
+  "accessToken": "eyJ...",
+  "refreshToken": "dGhpcyBpcyBh...",
+  "expiresIn": 3600000
+}
+```
+
+---
+
+## 2. Connections (Friends) — `/connections`
+
+Manage friend requests, blocking, and profile picture retrieval.
+
+### Friend Management
+
+| Method | Route | Body (`FriendRequest`) | Description |
+|:---|:---|:---|:---|
+| POST | `/connections/request` | `{ "friendId": Long }` | Send friend request. Returns **201 Created**. |
+| PUT | `/connections/accept` | `{ "friendId": Long }` | Accept incoming request. |
+| PUT | `/connections/reject` | `{ "friendId": Long }` | Reject incoming request. |
+| PUT | `/connections/block` | `{ "friendId": Long }` | Block a user. |
+| PUT | `/connections/unblock` | `{ "friendId": Long }` | Unblock a user. |
+
+### Listing
+
+| Method | Route | Description |
+|:---|:---|:---|
+| GET | `/connections` | Get all connections for the authenticated user. |
+| GET | `/connections/requests/sent` | Pending requests you sent. |
+| GET | `/connections/requests/received` | Pending requests sent to you. |
+
+### Profile Pictures
+
+| Method | Route | Description |
+|:---|:---|:---|
+| GET | `/connections/profile-picture/{userId}` | Returns raw image bytes (`image/png`). |
+| GET | `/connections/profile-pictures?userIds=1,2,3` | Returns `Map<Long, String>` of userId → Base64. |
+
+---
+
+## 3. Groups — `/groups`
+
+Full group lifecycle: create, search, join, manage members and roles.
+
+### CRUD & Discovery
+
+| Method | Route | Description |
+|:---|:---|:---|
+| POST | `/groups/create` | Create a group (creator becomes `ADMIN`). Body: `Group` JSON. |
+| GET | `/groups/search?query=...` | Search public groups by name/description. |
+| GET | `/groups/list` | List all public groups. |
+| GET | `/groups/my-groups` | List groups the authenticated user belongs to. |
+| GET | `/groups/{groupId}` | Get group details by ID. |
+
+### Membership
+
+| Method | Route | Description |
+|:---|:---|:---|
+| POST | `/groups/{groupId}/request-join` | Request to join a public group (role becomes `PENDING`). |
+| GET | `/groups/{groupId}/members` | List members of a group. |
+| POST | `/groups/{groupId}/leave` | Leave a group. |
+| POST | `/groups/{groupId}/add/{userId}?role=MEMBER` | Admin: add a user with a specific role. |
+
+### Admin Actions (require `ADMIN` role)
+
+| Method | Route | Description |
+|:---|:---|:---|
+| GET | `/groups/{groupId}/requests` | List pending join requests. |
+| PUT | `/groups/{groupId}/approve/{userId}` | Approve a join request (role → `MEMBER`). |
+| PUT | `/groups/{groupId}/reject/{userId}` | Reject a join request (deletes the request). |
+| PUT | `/groups/{groupId}/role/{userId}?role=ADMIN` | Change a member's role. |
+| DELETE | `/groups/{groupId}/remove/{userId}` | Remove a member from the group. |
+
+### Group Picture
+
+| Method | Route | Description |
+|:---|:---|:---|
+| GET | `/groups/{groupId}/picture` | Returns raw image bytes (`image/png`). |
+| POST | `/groups/{groupId}/picture` | Upload group picture (`MultipartFile`, field `file`). Admin only. |
+
+---
+
+## 4. Messaging — Firestore
+
+Messages are stored in a Firestore collection named **`messages`**. The backend currently provides a single write endpoint (used internally). For real-time messaging, connect to Firestore directly from the client using the Firebase Web SDK.
+
+### Message Document Shape
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `messageId` | String | Auto-generated Firestore document ID. |
+| `senderId` | Long | ID of the sender. |
+| `receiverId` | Long | ID of the recipient. |
+| `timestamp` | Timestamp | Firestore server timestamp. |
+| `textContent` | String | *(optional)* Plain text body. |
+| `imageBlob` | bytes | *(optional)* Raw image data (encode as Base64 when sending/receiving over JSON). |
+
+**Message subtypes** (use the fields above as needed):
+- **TextMessage** — only `textContent`
+- **ImageMessage** — only `imageBlob`
+- **MixedMessage** — both `textContent` and `imageBlob`
+
+---
+
+## 5. Data Models
+
+### User (`/auth/profile` response)
+
+| Field | Type | Notes |
+|:---|:---|:---|
+| `userId` | Long | |
+| `username` | String | Unique login name. |
+| `email` | String | |
+| `password` | String | Hashed (never returned). |
+| `profileName` | String | Display name. |
+| `bio` | String | |
+| `profilePictureBlob` | byte[] | Use `/connections/profile-picture/{userId}` instead. |
+| `isOnline` | boolean | |
+| `lastSeenTimestamp` | Instant | |
+| `createdAt` | Instant | |
+
+### Connection
+
+| Field | Type | Notes |
+|:---|:---|:---|
+| `id` | Long | |
+| `userId` | Long | Initiator. |
+| `friendId` | Long | Target user. |
+| `status` | String | `PENDING`, `ACCEPTED`, `REJECTED`, `BLOCKED`. |
+| `createdAt` | Long | Epoch millis. |
+| `updatedAt` | Long | Epoch millis. |
+
+### Group
+
+| Field | Type | Notes |
+|:---|:---|:---|
+| `groupId` | Long | |
+| `groupName` | String | Unique. |
+| `description` | String | Max 255 chars. |
+| `groupPictureBlob` | byte[] | Use `/groups/{groupId}/picture` instead. |
+| `createdAt` | Instant | |
+| `memberLimit` | int | Max members allowed. |
+| `memberCount` | int | Current member count. |
+| `memberLimitReached` | boolean | |
+| `isPublic` | boolean | Public groups are discoverable. |
+
+### GroupMembers (join table)
+
+| Field | Type | Notes |
+|:---|:---|:---|
+| `id` | Long | |
+| `group` | Group | |
+| `user` | User | |
+| `role` | String | `ADMIN`, `MEMBER`, or `PENDING` (for join requests). |
+| `joinedAt` | Instant | |
+
+### RefreshToken
+
+| Field | Type |
+|:---|:---|
+| `id` | Long |
+| `userId` | Long |
+| `token` | String |
+| `expiryDate` | Instant |
+
+---
+
+## 6. Error Handling
+
+| Status | Meaning |
+|:---|:---|
+| 200 OK | Success. |
+| 201 Created | Resource created. |
+| 204 No Content | Success, no body (e.g., logout). |
+| 400 Bad Request | Validation error or business rule violation. |
+| 401 Unauthorized | Missing/expired/invalid token. |
+| 403 Forbidden | Authenticated but lacks permission (e.g., non-admin). |
+| 404 Not Found | Resource not found. |
+
+### Error Response Shape
+```json
+{
+  "timestamp": "2024-01-01T12:00:00.000+00:00",
   "status": 400,
   "error": "Bad Request",
   "message": "You have already sent a friend request to this user.",
   "path": "/api/v1/connections/request"
 }
 ```
-```
 
-<!--
-[PROMPT_SUGGESTION]Can you generate a Swagger/OpenAPI configuration for these controllers?[PROMPT_SUGGESTION]
-[PROMPT_SUGGESTION]How should the frontend handle the byte array profilePictureBlob for image display?[PROMPT_SUGGESTION]
+---
+
+## 7. CORS
+
+The server accepts requests from any origin with credentials. Allowed methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`.
