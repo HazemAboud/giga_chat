@@ -1,8 +1,10 @@
 package com.auth.controller;
 
 import java.io.IOException;
-import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -77,7 +79,9 @@ public class AuthController {
     }
 
     @GetMapping("/users/search")
-    public ResponseEntity<List<User>> searchUsers(@RequestParam String query) {
-        return ResponseEntity.ok(authService.searchUsers(query));
+    public ResponseEntity<Page<User>> searchUsers(
+            @RequestParam String query,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(authService.searchUsers(query, pageable));
     }
 }

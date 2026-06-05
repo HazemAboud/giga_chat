@@ -1,5 +1,7 @@
 package com.connection.model;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -39,8 +41,8 @@ public class Connection {
     private String status; // e.g., "PENDING", "ACCEPTED", "REJECTED", "BLOCKED"
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private Long createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private Long updatedAt;
+    private Instant updatedAt;
 }

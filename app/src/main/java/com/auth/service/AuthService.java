@@ -1,9 +1,15 @@
 package com.auth.service;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 
+import javax.imageio.ImageIO;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -70,15 +76,28 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refreshToken(TokenRefreshRequest request) {
-        RefreshToken token = refreshTokenRepository.findByToken(request.getRefreshToken())
+        RefreshToken oldToken = refreshTokenRepository.findByToken(request.getRefreshToken())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
-        if (token.getExpiryDate().isBefore(Instant.now())) {
-            refreshTokenRepository.delete(token);
+        if (oldToken.getExpiryDate().isBefore(Instant.now())) {
+            refreshTokenRepository.delete(oldToken);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token expired");
         }
 
-        return generateAuthResponse(token.getUser());
+        // Rotate: delete the old token before issuing a new one
+        refreshTokenRepository.delete(oldToken);
+        refreshTokenRepository.flush();
+
+        String accessToken = jwtService.generateAccessToken(oldToken.getUser().getUsername());
+        String newRefreshTokenStr = jwtService.generateRefreshToken(oldToken.getUser().getUsername());
+        RefreshToken newRefreshToken = RefreshToken.builder()
+                .user(oldToken.getUser())
+                .token(newRefreshTokenStr)
+                .expiryDate(Instant.now().plusMillis(REFRESH_TOKEN_EXPIRATION))
+                .build();
+        refreshTokenRepository.save(newRefreshToken);
+
+        return new AuthResponse(accessToken, newRefreshToken.getToken(), ACCESS_TOKEN_EXPIRATION);
     }
 
     @Transactional
@@ -133,16 +152,33 @@ public class AuthService {
 
     @Transactional
     public void uploadAvatar(User loggedInUser, MultipartFile file) throws IOException {
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
+        }
+
         User dbUser = userRepository.findById(loggedInUser.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // Store the image as a byte array (blob) directly in the database
-        // Assuming User model has a field like 'profilePictureBlob' of type byte[]
-        dbUser.setProfilePictureBlob(file.getBytes());
+        dbUser.setProfilePictureBlob(convertToPng(file));
         userRepository.save(dbUser);
+    }
+
+    private byte[] convertToPng(MultipartFile file) throws IOException {
+        BufferedImage image = ImageIO.read(file.getInputStream());
+        if (image == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid image file");
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", baos);
+        return baos.toByteArray();
     }
 
     public List<User> searchUsers(String query) {
         return userRepository.searchUsers(query);
+    }
+
+    public Page<User> searchUsers(String query, Pageable pageable) {
+        return userRepository.searchUsers(query, pageable);
     }
 }

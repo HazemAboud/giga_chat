@@ -14,10 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 
-import java.util.List;
-import java.util.Objects;
+import java.time.Instant;
 import java.util.Optional;
-import java.util.stream.Collectors;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 @RequiredArgsConstructor
@@ -26,45 +27,37 @@ public class ConnectionService {
     private final ConnectionRepository connectionRepository;
     private final UserRepository userRepository;
 
-    public List<FriendResponse> getFriends(Long userId) {
-        return connectionRepository.findByUserIdOrFriendId(userId, userId).stream()
-                .filter(c -> "ACCEPTED".equals(c.getStatus()))
+    public Page<FriendResponse> getFriends(Long userId, Pageable pageable) {
+        return connectionRepository.findAcceptedConnections(userId, pageable)
                 .map(c -> {
                     Long otherUserId = c.getUserId().equals(userId) ? c.getFriendId() : c.getUserId();
                     return buildFriendResponse(c, otherUserId, "ACCEPTED");
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                });
     }
 
-    public List<FriendResponse> getSentFriendRequests(Long userId) {
-        return connectionRepository.findByUserIdAndStatus(userId, "PENDING").stream()
-                .map(c -> buildFriendResponse(c, c.getFriendId(), "PENDING"))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+    public Page<FriendResponse> getSentFriendRequests(Long userId, Pageable pageable) {
+        return connectionRepository.findByUserIdAndStatus(userId, "PENDING", pageable)
+                .map(c -> buildFriendResponse(c, c.getFriendId(), "PENDING"));
     }
 
-    public List<FriendResponse> getReceivedFriendRequests(Long userId) {
-        return connectionRepository.findByFriendIdAndStatus(userId, "PENDING").stream()
-                .map(c -> buildFriendResponse(c, c.getUserId(), "PENDING"))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+    public Page<FriendResponse> getReceivedFriendRequests(Long userId, Pageable pageable) {
+        return connectionRepository.findByFriendIdAndStatus(userId, "PENDING", pageable)
+                .map(c -> buildFriendResponse(c, c.getUserId(), "PENDING"));
     }
 
     private FriendResponse buildFriendResponse(Connection c, Long otherUserId, String status) {
-        User other = userRepository.findById(otherUserId).orElse(null);
-        if (other == null) return null;
+        User other = userRepository.findById(otherUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         return FriendResponse.builder()
                 .userId(other.getUserId())
                 .username(other.getUsername())
                 .email(other.getEmail())
                 .profileName(other.getProfileName())
                 .bio(other.getBio())
-                .profilePictureBlob(other.getProfilePictureBlob())
                 .isOnline(other.isOnline())
                 .lastSeenTimestamp(other.getLastSeenTimestamp() != null ? other.getLastSeenTimestamp().toString() : null)
                 .status(status)
-                .connectedSince(c.getCreatedAt())
+                .connectedSince(c.getCreatedAt() != null ? c.getCreatedAt().toEpochMilli() : null)
                 .build();
     }
 
@@ -102,7 +95,7 @@ public class ConnectionService {
                 existing.setUserId(userId);
                 existing.setFriendId(friendId);
                 existing.setStatus("PENDING");
-                existing.setUpdatedAt(System.currentTimeMillis());
+                existing.setUpdatedAt(Instant.now());
                 return connectionRepository.save(existing);
             }
         }
@@ -111,8 +104,8 @@ public class ConnectionService {
                 .userId(userId)
                 .friendId(friendId)
                 .status("PENDING")
-                .createdAt(System.currentTimeMillis())
-                .updatedAt(System.currentTimeMillis())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
         return connectionRepository.save(connection);
@@ -132,7 +125,7 @@ public class ConnectionService {
         }
 
         connection.setStatus("ACCEPTED");
-        connection.setUpdatedAt(System.currentTimeMillis());
+        connection.setUpdatedAt(Instant.now());
         return connectionRepository.save(connection);
     }
 
@@ -150,7 +143,7 @@ public class ConnectionService {
         }
 
         connection.setStatus("REJECTED");
-        connection.setUpdatedAt(System.currentTimeMillis());
+        connection.setUpdatedAt(Instant.now());
         return connectionRepository.save(connection);
     }
 
@@ -167,9 +160,8 @@ public class ConnectionService {
         Optional<Connection> existingForward = connectionRepository.findByUserIdAndFriendId(blockerId, blockedId);
         Optional<Connection> existingReverse = connectionRepository.findByUserIdAndFriendId(blockedId, blockerId);
 
-        // If already blocked by this user, return as-is
         if (existingForward.isPresent() && "BLOCKED".equals(existingForward.get().getStatus())) {
-            return existingForward.get();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This user is already blocked.");
         }
 
         // 2. Delete any non-blocked relationship in either direction
@@ -192,8 +184,8 @@ public class ConnectionService {
                 .userId(blockerId)
                 .friendId(blockedId)
                 .status("BLOCKED")
-                .createdAt(System.currentTimeMillis())
-                .updatedAt(System.currentTimeMillis())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
         return connectionRepository.save(newBlock);
@@ -221,15 +213,13 @@ public class ConnectionService {
         connectionRepository.delete(conn);
     }
 
-    public List<FriendResponse> getBlockedUsers(Long userId) {
-        return connectionRepository.findByUserIdAndStatus(userId, "BLOCKED").stream()
-                .map(c -> buildFriendResponse(c, c.getFriendId(), "BLOCKED"))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+    public Page<FriendResponse> getBlockedUsers(Long userId, Pageable pageable) {
+        return connectionRepository.findByUserIdAndStatus(userId, "BLOCKED", pageable)
+                .map(c -> buildFriendResponse(c, c.getFriendId(), "BLOCKED"));
     }
 
     public ConnectionStatusResponse getConnectionStatus(Long userId, Long otherUserId) {
-        Optional<Connection> forward = connectionRepository.findByUserIdAndFriendId(userId, otherUserId);
+        Optional<Connection> forward = connectionRepository.findConnection(userId, otherUserId);
         if (forward.isPresent()) {
             String status = forward.get().getStatus();
             if ("ACCEPTED".equals(status)) return new ConnectionStatusResponse("FRIENDS");
@@ -237,7 +227,7 @@ public class ConnectionService {
             if ("BLOCKED".equals(status)) return new ConnectionStatusResponse("BLOCKED_BY_ME");
         }
 
-        Optional<Connection> reverse = connectionRepository.findByUserIdAndFriendId(otherUserId, userId);
+        Optional<Connection> reverse = connectionRepository.findConnection(otherUserId, userId);
         if (reverse.isPresent()) {
             String status = reverse.get().getStatus();
             if ("PENDING".equals(status)) return new ConnectionStatusResponse("REQUEST_RECEIVED");

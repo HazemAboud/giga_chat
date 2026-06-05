@@ -3,6 +3,7 @@ package com.group.model;
 import java.time.Instant;
 
 import com.auth.model.User;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -36,12 +37,14 @@ public class GroupMembers {
     @JoinColumn(name = "group_id", nullable = false)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
+    @JsonIgnoreProperties({"groupPictureBlob", "createdAt", "memberLimit", "memberCount", "memberLimitReached"})
     private Group group;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
+    @JsonIgnoreProperties({"password", "profilePictureBlob", "isOnline", "lastSeenTimestamp", "authorities", "accountNonExpired", "accountNonLocked", "credentialsNonExpired", "enabled"})
     private User user;
 
     @Column(name = "role", length = 50)

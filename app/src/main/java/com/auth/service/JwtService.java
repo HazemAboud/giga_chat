@@ -48,7 +48,7 @@ public class JwtService {
 
     public boolean isTokenValid(String token, String username) {
         final String extractedUsername = extractUsername(token);
-        return (extractedUsername.equals(username)) && !isTokenExpired(token);
+        return extractedUsername != null && extractedUsername.equals(username);
     }
 
     public String extractUsername(String token) {
@@ -63,14 +63,6 @@ public class JwtService {
         } catch (IllegalArgumentException e) {
             log.debug("Token argument invalid: {}", e.getMessage());
             return null;
-        }
-    }
-
-    private boolean isTokenExpired(String token) {
-        try {
-            return Jwts.parserBuilder().setSigningKey(getSignInKey()).build().parseClaimsJws(token).getBody().getExpiration().before(new Date());
-        } catch (Exception e) {
-            return true;
         }
     }
 

@@ -1,6 +1,7 @@
 package com.group.model;
 
 import java.time.Instant;
+import java.util.Set;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,6 +10,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,14 +25,18 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "groups")
 public class Group {
+    public static final Set<String> VALID_ROLES = Set.of("ADMIN", "MODERATOR", "POSTER", "COMMENTER", "MEMBER", "PENDING");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "group_id")
     private Long groupId;
 
+    @NotBlank(message = "Group name is required")
     @Column(unique = true, nullable = false)
     private String groupName;
 
+    @Size(max = 255, message = "Description must be at most 255 characters")
     @Column(name = "description", length = 255)
     private String description;
 

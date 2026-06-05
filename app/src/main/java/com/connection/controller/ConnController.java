@@ -1,7 +1,8 @@
 package com.connection.controller;
 
-import java.util.List;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,16 +22,14 @@ import com.connection.dto.FriendResponse;
 import com.connection.service.ConnectionService;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/v1/connections")
+@RequiredArgsConstructor
 public class ConnController {
 
     private final ConnectionService connService;
-
-    public ConnController(ConnectionService connService) {
-        this.connService = connService;
-    }
 
     @PostMapping("/request")
     public ResponseEntity<Void> connect(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
@@ -73,18 +72,24 @@ public class ConnController {
     }
 
     @GetMapping
-    public ResponseEntity<List<FriendResponse>> getFriends(@AuthenticationPrincipal User loggedInUser) {
-        return ResponseEntity.ok(connService.getFriends(loggedInUser.getUserId()));
+    public ResponseEntity<Page<FriendResponse>> getFriends(
+            @AuthenticationPrincipal User loggedInUser,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(connService.getFriends(loggedInUser.getUserId(), pageable));
     }
 
     @GetMapping("/requests/sent")
-    public ResponseEntity<List<FriendResponse>> getSentRequests(@AuthenticationPrincipal User loggedInUser) {
-        return ResponseEntity.ok(connService.getSentFriendRequests(loggedInUser.getUserId()));
+    public ResponseEntity<Page<FriendResponse>> getSentRequests(
+            @AuthenticationPrincipal User loggedInUser,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(connService.getSentFriendRequests(loggedInUser.getUserId(), pageable));
     }
 
     @GetMapping("/requests/received")
-    public ResponseEntity<List<FriendResponse>> getReceivedRequests(@AuthenticationPrincipal User loggedInUser) {
-        return ResponseEntity.ok(connService.getReceivedFriendRequests(loggedInUser.getUserId()));
+    public ResponseEntity<Page<FriendResponse>> getReceivedRequests(
+            @AuthenticationPrincipal User loggedInUser,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(connService.getReceivedFriendRequests(loggedInUser.getUserId(), pageable));
     }
 
     @DeleteMapping("/friend/{friendId}")
@@ -94,8 +99,10 @@ public class ConnController {
     }
 
     @GetMapping("/blocked")
-    public ResponseEntity<List<FriendResponse>> getBlocked(@AuthenticationPrincipal User loggedInUser) {
-        return ResponseEntity.ok(connService.getBlockedUsers(loggedInUser.getUserId()));
+    public ResponseEntity<Page<FriendResponse>> getBlocked(
+            @AuthenticationPrincipal User loggedInUser,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(connService.getBlockedUsers(loggedInUser.getUserId(), pageable));
     }
 
     @GetMapping("/status/{userId}")

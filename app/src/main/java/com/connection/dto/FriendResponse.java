@@ -15,7 +15,6 @@ public class FriendResponse {
     private String email;
     private String profileName;
     private String bio;
-    private byte[] profilePictureBlob;
     private boolean isOnline;
     private String lastSeenTimestamp;
     private String status;

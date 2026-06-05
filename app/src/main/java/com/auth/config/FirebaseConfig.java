@@ -6,14 +6,15 @@ import java.io.InputStream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.util.StringUtils;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
-import com.google.cloud.firestore.FirestoreOptions;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
+import com.google.firebase.cloud.FirestoreClient;
 
 @Configuration
 public class FirebaseConfig {
@@ -45,12 +46,8 @@ public class FirebaseConfig {
     }
 
     @Bean
+    @DependsOn("firebaseApp")
     public Firestore firestore() {
-        // Initializing via FirestoreOptions using the project ID guarantees 
-        // it links correctly with your initialized Firebase configuration
-        return FirestoreOptions.newBuilder()
-                .setProjectId(projectId)
-                .build()
-                .getService();
+        return FirestoreClient.getFirestore();
     }
 }

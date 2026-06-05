@@ -1,5 +1,6 @@
 package com.chat.controller;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -14,16 +15,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.auth.model.User;
 import com.chat.dto.ReactionRequest;
-import com.chat.dto.SendMessageRequest;
 import com.chat.model.Message;
 import com.chat.service.MessageService;
 import com.chat.service.WebSocketNotificationService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/v1/messages")
@@ -36,24 +39,35 @@ public class MessageController {
     @PostMapping
     public ResponseEntity<String> sendMessage(
             @AuthenticationPrincipal User loggedInUser,
-            @Valid @RequestBody SendMessageRequest request
-    ) throws ExecutionException, InterruptedException {
+            @RequestParam("receiverId") Long receiverId,
+            @RequestParam(value = "textContent", required = false) String textContent,
+            @RequestParam(value = "file", required = false) MultipartFile file
+    ) throws ExecutionException, InterruptedException, IOException {
+        if ((textContent == null || textContent.isBlank()) && (file == null || file.isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must have text content or a file");
+        }
+        messageService.checkReceiverExists(receiverId);
+        messageService.checkFriendship(loggedInUser.getUserId(), receiverId);
+
         Message msg = Message.builder()
                 .senderId(loggedInUser.getUserId())
-                .receiverId(request.getReceiverId())
-                .textContent(request.getTextContent())
+                .receiverId(receiverId)
+                .textContent(textContent)
+                .imageBlob(file != null ? file.getBytes() : null)
                 .build();
         String messageId = messageService.saveMessage(msg);
-        notificationService.notifyNewMessage(messageId, loggedInUser.getUserId(), request.getReceiverId());
+        notificationService.notifyNewMessage(messageId, loggedInUser.getUserId(), receiverId);
         return ResponseEntity.status(HttpStatus.CREATED).body(messageId);
     }
 
     @GetMapping
     public ResponseEntity<List<Message>> getConversation(
             @AuthenticationPrincipal User loggedInUser,
-            @RequestParam Long userId
+            @RequestParam Long userId,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(required = false) String lastMessageId
     ) throws ExecutionException, InterruptedException {
-        return ResponseEntity.ok(messageService.getConversation(loggedInUser.getUserId(), userId));
+        return ResponseEntity.ok(messageService.getConversation(loggedInUser.getUserId(), userId, limit, lastMessageId));
     }
 
     @PostMapping("/{messageId}/reactions")
