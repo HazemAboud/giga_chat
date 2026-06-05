@@ -8,20 +8,25 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 public class JwtService {
 
     @Value("${application.security.jwt.secret-key}")
     private String secretKey;
 
     // 1 Hour in milliseconds
-    private static final long ACCESS_TOKEN_EXPIRATION = 3600000; 
+    public static final long ACCESS_TOKEN_EXPIRATION = 3600000;
     // 2 Weeks in milliseconds
-    public static final long REFRESH_TOKEN_EXPIRATION = 1209600000; 
+    public static final long REFRESH_TOKEN_EXPIRATION = 1209600000;
 
     public String generateAccessToken(String username) {
         return buildToken(new HashMap<>(), username, ACCESS_TOKEN_EXPIRATION);
@@ -47,11 +52,26 @@ public class JwtService {
     }
 
     public String extractUsername(String token) {
-        return Jwts.parserBuilder().setSigningKey(getSignInKey()).build().parseClaimsJws(token).getBody().getSubject();
+        try {
+            return Jwts.parserBuilder().setSigningKey(getSignInKey()).build().parseClaimsJws(token).getBody().getSubject();
+        } catch (ExpiredJwtException e) {
+            log.debug("Token expired: {}", e.getMessage());
+            return null;
+        } catch (MalformedJwtException | SignatureException e) {
+            log.debug("Invalid token: {}", e.getMessage());
+            return null;
+        } catch (IllegalArgumentException e) {
+            log.debug("Token argument invalid: {}", e.getMessage());
+            return null;
+        }
     }
 
     private boolean isTokenExpired(String token) {
-        return Jwts.parserBuilder().setSigningKey(getSignInKey()).build().parseClaimsJws(token).getBody().getExpiration().before(new Date());
+        try {
+            return Jwts.parserBuilder().setSigningKey(getSignInKey()).build().parseClaimsJws(token).getBody().getExpiration().before(new Date());
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     private Key getSignInKey() {

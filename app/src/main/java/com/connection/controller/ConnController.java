@@ -1,40 +1,39 @@
 package com.connection.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.auth.model.User;
-import com.auth.service.AuthService;
+import com.connection.dto.ConnectionStatusResponse;
 import com.connection.dto.FriendRequest;
+import com.connection.dto.FriendResponse;
 import com.connection.service.ConnectionService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/connections")
 public class ConnController {
 
     private final ConnectionService connService;
-    private final AuthService authService;
 
-    public ConnController(ConnectionService connService, AuthService authService) {
+    public ConnController(ConnectionService connService) {
         this.connService = connService;
-        this.authService = authService;
     }
 
     @PostMapping("/request")
-    public ResponseEntity<Void> connect(@AuthenticationPrincipal User loggedInUser, @RequestBody FriendRequest request) {
+    public ResponseEntity<Void> connect(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
         // Enforce that the initiator is always the currently authenticated user
         request.setUserId(loggedInUser.getUserId());
         connService.sendRequest(request);
@@ -42,7 +41,7 @@ public class ConnController {
     }
 
     @PutMapping("/accept")
-    public ResponseEntity<Void> accept(@AuthenticationPrincipal User loggedInUser, @RequestBody FriendRequest request) {
+    public ResponseEntity<Void> accept(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
         // Enforce that the acceptor is always the currently authenticated user
         request.setUserId(loggedInUser.getUserId());
         connService.acceptRequest(request);
@@ -50,7 +49,7 @@ public class ConnController {
     }
 
     @PutMapping("/reject")
-    public ResponseEntity<Void> reject(@AuthenticationPrincipal User loggedInUser, @RequestBody FriendRequest request) {
+    public ResponseEntity<Void> reject(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
         // Enforce that the rejector is always the currently authenticated user
         request.setUserId(loggedInUser.getUserId());
         connService.rejectRequest(request);
@@ -58,7 +57,7 @@ public class ConnController {
     }
 
     @PutMapping("/block")
-    public ResponseEntity<Void> block(@AuthenticationPrincipal User loggedInUser, @RequestBody FriendRequest request) {
+    public ResponseEntity<Void> block(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
         // Enforce that the blocker is always the currently authenticated user
         request.setUserId(loggedInUser.getUserId());
         connService.blockUser(request);
@@ -66,7 +65,7 @@ public class ConnController {
     }
 
     @PutMapping("/unblock")
-    public ResponseEntity<Void> unblock(@AuthenticationPrincipal User loggedInUser, @RequestBody FriendRequest request) {
+    public ResponseEntity<Void> unblock(@AuthenticationPrincipal User loggedInUser, @Valid @RequestBody FriendRequest request) {
         // Enforce that the unblocker is always the currently authenticated user
         request.setUserId(loggedInUser.getUserId());
         connService.unblockUser(request);
@@ -74,34 +73,37 @@ public class ConnController {
     }
 
     @GetMapping
-    public ResponseEntity<List<?>> getConnections(@AuthenticationPrincipal User loggedInUser) {
-        // Securely fetch connections for the authenticated user
-        return ResponseEntity.ok(connService.getConnections(loggedInUser.getUserId()));
+    public ResponseEntity<List<FriendResponse>> getFriends(@AuthenticationPrincipal User loggedInUser) {
+        return ResponseEntity.ok(connService.getFriends(loggedInUser.getUserId()));
     }
 
     @GetMapping("/requests/sent")
-    public ResponseEntity<List<?>> getSentRequests(@AuthenticationPrincipal User loggedInUser) {
-        // Fetch all pending friend requests sent by the authenticated user
+    public ResponseEntity<List<FriendResponse>> getSentRequests(@AuthenticationPrincipal User loggedInUser) {
         return ResponseEntity.ok(connService.getSentFriendRequests(loggedInUser.getUserId()));
     }
 
     @GetMapping("/requests/received")
-    public ResponseEntity<List<?>> getReceivedRequests(@AuthenticationPrincipal User loggedInUser) {
-        // Fetch all pending friend requests received by the authenticated user
+    public ResponseEntity<List<FriendResponse>> getReceivedRequests(@AuthenticationPrincipal User loggedInUser) {
         return ResponseEntity.ok(connService.getReceivedFriendRequests(loggedInUser.getUserId()));
     }
 
-    @GetMapping("/profile-picture/{userId}")
-    public ResponseEntity<byte[]> getUserProfilePicture(@PathVariable Long userId) {
-        byte[] profilePicture = authService.getProfilePicture(userId);
-        return ResponseEntity.ok()
-                .contentType(MediaType.IMAGE_PNG)
-                .body(profilePicture);
+    @DeleteMapping("/friend/{friendId}")
+    public ResponseEntity<Void> unfriend(@AuthenticationPrincipal User loggedInUser, @PathVariable Long friendId) {
+        connService.unfriend(loggedInUser.getUserId(), friendId);
+        return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/profile-pictures")
-    public ResponseEntity<Map<Long, String>> getUserProfilePicturesBase64(@RequestParam List<Long> userIds) {
-        Map<Long, String> profilePictures = authService.getProfilePicturesBase64(userIds);
-        return ResponseEntity.ok(profilePictures);
+    @GetMapping("/blocked")
+    public ResponseEntity<List<FriendResponse>> getBlocked(@AuthenticationPrincipal User loggedInUser) {
+        return ResponseEntity.ok(connService.getBlockedUsers(loggedInUser.getUserId()));
     }
+
+    @GetMapping("/status/{userId}")
+    public ResponseEntity<ConnectionStatusResponse> getConnectionStatus(
+            @AuthenticationPrincipal User loggedInUser,
+            @PathVariable Long userId
+    ) {
+        return ResponseEntity.ok(connService.getConnectionStatus(loggedInUser.getUserId(), userId));
+    }
+
 }

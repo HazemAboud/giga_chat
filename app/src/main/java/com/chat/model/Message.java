@@ -1,17 +1,18 @@
 package com.chat.model;
 
+import java.util.Map;
+
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 import com.google.cloud.firestore.annotation.ServerTimestamp;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
 
 @Data
-@SuperBuilder
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Message {
@@ -25,32 +26,8 @@ public class Message {
     @ServerTimestamp
     private Timestamp timestamp;
 
-}
-
-@Data
-@EqualsAndHashCode(callSuper = true)
-@SuperBuilder
-@NoArgsConstructor
-@AllArgsConstructor
-class TextMessage extends Message {
     private String textContent;
-}
-
-@Data
-@EqualsAndHashCode(callSuper = true)
-@SuperBuilder
-@NoArgsConstructor
-@AllArgsConstructor
-class ImageMessage extends Message {
     private byte[] imageBlob;
-}
+    private Map<String, String> reactions;
 
-@Data
-@EqualsAndHashCode(callSuper = true)
-@SuperBuilder
-@NoArgsConstructor
-@AllArgsConstructor
-class MixedMessage extends Message {
-    private byte[] imageBlob;
-    private String textContent;
 }

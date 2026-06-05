@@ -2,10 +2,7 @@ package com.auth.service;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -25,6 +22,7 @@ import com.auth.model.RefreshToken;
 import com.auth.model.User;
 import com.auth.repository.RefreshTokenRepository;
 import com.auth.repository.UserRepository;
+import static com.auth.service.JwtService.ACCESS_TOKEN_EXPIRATION;
 import static com.auth.service.JwtService.REFRESH_TOKEN_EXPIRATION;
 
 import lombok.RequiredArgsConstructor;
@@ -102,11 +100,16 @@ public class AuthService {
         
         refreshTokenRepository.save(refreshToken);
 
-        return new AuthResponse(accessToken, refreshToken.getToken());
+        return new AuthResponse(accessToken, refreshToken.getToken(), ACCESS_TOKEN_EXPIRATION);
+    }
+
+    public User getProfile(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
     @Transactional
-    public User updateProfile(User loggedInUser, UpdateProfileRequest request) {
+    public void updateProfile(User loggedInUser, UpdateProfileRequest request) {
         User dbUser = userRepository.findById(loggedInUser.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
@@ -125,7 +128,7 @@ public class AuthService {
             dbUser.setBio(request.getBio());
         }
 
-        return userRepository.save(dbUser);
+        userRepository.save(dbUser);
     }
 
     @Transactional
@@ -139,24 +142,7 @@ public class AuthService {
         userRepository.save(dbUser);
     }
 
-    public byte[] getProfilePicture(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        
-        if (user.getProfilePictureBlob() == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile picture not found for this user");
-        }
-        return user.getProfilePictureBlob();
-    }
-
-    public Map<Long, String> getProfilePicturesBase64(List<Long> userIds) {
-        List<User> users = userRepository.findAllById(userIds);
-        Map<Long, String> profilePictures = new HashMap<>();
-        for (User user : users) {
-            if (user.getProfilePictureBlob() != null) {
-                profilePictures.put(user.getUserId(), Base64.getEncoder().encodeToString(user.getProfilePictureBlob()));
-            }
-        }
-        return profilePictures;
+    public List<User> searchUsers(String query) {
+        return userRepository.searchUsers(query);
     }
 }

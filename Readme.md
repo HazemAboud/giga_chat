@@ -105,9 +105,37 @@ Full group lifecycle: create, search, join, manage members and roles.
 
 ---
 
-## 4. Messaging — Firestore
+## 4. Messaging — `/messages`
 
-Messages are stored in a Firestore collection named **`messages`**. The backend currently provides a single write endpoint (used internally). For real-time messaging, connect to Firestore directly from the client using the Firebase Web SDK.
+Messages are stored in a Firestore collection named **`messages`**. For real-time messaging, connect to Firestore directly from the client using the Firebase Web SDK.
+
+### Message Endpoints
+
+| Method | Route | Body | Description |
+|:---|:---|:---|:---|
+| POST | `/messages` | `SendMessageRequest` | Send a text message. Returns the message ID. |
+| GET | `/messages?userId={userId}` | — | Get conversation history with a specific user. |
+| POST | `/messages/{messageId}/reactions` | `ReactionRequest` | Add or update a reaction on a message. |
+| DELETE | `/messages/{messageId}/reactions` | — | Remove your reaction from a message. |
+
+**`SendMessageRequest`** shape:
+```json
+{
+  "receiverId": 2,
+  "textContent": "Hello!"
+}
+```
+
+Validation: `receiverId` must be a non-null Long; `textContent` must be non-blank. Returns **400** on violation.
+
+**`ReactionRequest`** shape:
+```json
+{
+  "emoji": "👍"
+}
+```
+
+Validation: `emoji` must be non-blank and at most 10 characters. Returns **400** on violation.
 
 ### Message Document Shape
 
@@ -119,15 +147,118 @@ Messages are stored in a Firestore collection named **`messages`**. The backend 
 | `timestamp` | Timestamp | Firestore server timestamp. |
 | `textContent` | String | *(optional)* Plain text body. |
 | `imageBlob` | bytes | *(optional)* Raw image data (encode as Base64 when sending/receiving over JSON). |
+| `reactions` | Map\<String, String\> | *(optional)* Map of userId → emoji, e.g. `{"2": "👍", "3": "❤️"}`. |
 
-**Message subtypes** (use the fields above as needed):
-- **TextMessage** — only `textContent`
-- **ImageMessage** — only `imageBlob`
-- **MixedMessage** — both `textContent` and `imageBlob`
+### Reaction Behavior
+
+- Each user can have **at most one reaction per message**. Adding a reaction when one already exists **updates** it to the new emoji.
+- Removing a reaction (DELETE) deletes only the calling user's reaction entry.
+- Reactions are stored inline in the message document as `reactions.<userId>`.
 
 ---
 
-## 5. Data Models
+## 5. Real-Time Events — WebSocket
+
+The server exposes a STOMP-over-WebSocket endpoint for real-time events. When a message is sent or a reaction is added/removed, both conversation participants receive a `MessageEvent` JSON payload.
+
+### Connection
+
+| Endpoint | Protocol | Auth |
+|:---|:---|:---|
+| `/ws` | STOMP over WebSocket (SockJS fallback) | JWT in `Authorization` STOMP header (`Bearer <token>`) |
+
+**Connect example (STOMP):**
+```
+CONNECT
+Authorization: Bearer <access_token>
+
+```
+
+**Connect example (JavaScript with SockJS + STOMP):**
+```js
+const socket = new SockJS('http://localhost:8080/ws');
+const client = Stomp.over(socket);
+client.connect({ Authorization: 'Bearer <access_token>' }, frame => {
+    // connected
+});
+```
+
+### Subscriptions
+
+| Destination | Event Types | Payload Fields |
+|:---|:---|:---|
+| `/user/queue/messages` | `NEW_MESSAGE`, `REACTION_ADDED`, `REACTION_REMOVED` | See below |
+
+### MessageEvent Payload
+
+```json
+{
+  "type": "NEW_MESSAGE",
+  "messageId": "abc123",
+  "senderId": 1,
+  "receiverId": 2,
+  "userId": null,
+  "emoji": null
+}
+```
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `type` | String | `NEW_MESSAGE` / `REACTION_ADDED` / `REACTION_REMOVED` |
+| `messageId` | String | ID of the affected message |
+| `senderId` | Long | *(NEW_MESSAGE only)* Sender of the message |
+| `receiverId` | Long | *(NEW_MESSAGE only)* Recipient of the message |
+| `userId` | Long | *(REACTION events only)* User who reacted |
+| `emoji` | String | *(REACTION_ADDED only)* The emoji that was added |
+
+Clients should fetch the full message document from Firestore upon receiving a `NEW_MESSAGE` event.
+
+---
+
+## 6. Firestore Composite Index
+
+The `GET /messages?userId={id}` endpoint queries Firestore with `whereIn` on `senderId` and `receiverId` combined with `orderBy("timestamp")`. This requires a **composite index** on the `messages` collection.
+
+### Index Definition (`firestore.indexes.json`)
+
+```json
+{
+  "indexes": [
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "senderId", "order": "ASCENDING" },
+        { "fieldPath": "receiverId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
+```
+
+### How to Deploy
+
+1. Install the Firebase CLI:
+   ```bash
+   npm install -g firebase-tools
+   ```
+2. Log in and initialize Firestore in your project:
+   ```bash
+   firebase login
+   firebase init firestore
+   ```
+3. Replace the generated `firestore.indexes.json` with the definition above.
+4. Deploy the indexes:
+   ```bash
+   firebase deploy --only firestore:indexes
+   ```
+5. Indexes take 1–5 minutes to build. The query will fail with a URL to the Firebase console until the index is ready — clicking that link lets you create the index manually as well.
+
+---
+
+## 7. Data Models
 
 ### User (`/auth/profile` response)
 
@@ -190,7 +321,7 @@ Messages are stored in a Firestore collection named **`messages`**. The backend 
 
 ---
 
-## 6. Error Handling
+## 8. Error Handling
 
 | Status | Meaning |
 |:---|:---|
@@ -215,6 +346,6 @@ Messages are stored in a Firestore collection named **`messages`**. The backend 
 
 ---
 
-## 7. CORS
+## 9. CORS
 
 The server accepts requests from any origin with credentials. Allowed methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`.

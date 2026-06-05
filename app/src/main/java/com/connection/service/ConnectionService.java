@@ -1,32 +1,71 @@
 package com.connection.service;
 
+import com.auth.model.User;
+import com.auth.repository.UserRepository;
+import com.connection.dto.ConnectionStatusResponse;
 import com.connection.dto.FriendRequest;
+import com.connection.dto.FriendResponse;
 import com.connection.model.Connection;
 import com.connection.repository.ConnectionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ConnectionService {
 
     private final ConnectionRepository connectionRepository;
+    private final UserRepository userRepository;
 
-    public List<Connection> getConnections(Long userId) {
-        return connectionRepository.findByUserIdOrFriendId(userId, userId);
+    public List<FriendResponse> getFriends(Long userId) {
+        return connectionRepository.findByUserIdOrFriendId(userId, userId).stream()
+                .filter(c -> "ACCEPTED".equals(c.getStatus()))
+                .map(c -> {
+                    Long otherUserId = c.getUserId().equals(userId) ? c.getFriendId() : c.getUserId();
+                    return buildFriendResponse(c, otherUserId, "ACCEPTED");
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
-    public List<Connection> getSentFriendRequests(Long userId) {
-        return connectionRepository.findByUserIdAndStatus(userId, "PENDING");
+    public List<FriendResponse> getSentFriendRequests(Long userId) {
+        return connectionRepository.findByUserIdAndStatus(userId, "PENDING").stream()
+                .map(c -> buildFriendResponse(c, c.getFriendId(), "PENDING"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
-    public List<Connection> getReceivedFriendRequests(Long userId) {
-        return connectionRepository.findByFriendIdAndStatus(userId, "PENDING");
+    public List<FriendResponse> getReceivedFriendRequests(Long userId) {
+        return connectionRepository.findByFriendIdAndStatus(userId, "PENDING").stream()
+                .map(c -> buildFriendResponse(c, c.getUserId(), "PENDING"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private FriendResponse buildFriendResponse(Connection c, Long otherUserId, String status) {
+        User other = userRepository.findById(otherUserId).orElse(null);
+        if (other == null) return null;
+        return FriendResponse.builder()
+                .userId(other.getUserId())
+                .username(other.getUsername())
+                .email(other.getEmail())
+                .profileName(other.getProfileName())
+                .bio(other.getBio())
+                .profilePictureBlob(other.getProfilePictureBlob())
+                .isOnline(other.isOnline())
+                .lastSeenTimestamp(other.getLastSeenTimestamp() != null ? other.getLastSeenTimestamp().toString() : null)
+                .status(status)
+                .connectedSince(c.getCreatedAt())
+                .build();
     }
 
     @Transactional
@@ -37,7 +76,7 @@ public class ConnectionService {
     @Transactional
     public Connection sendConnectionRequest(Long userId, Long friendId) {
         if (userId.equals(friendId)) {
-            throw new IllegalArgumentException("You cannot send a friend request to yourself.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot send a friend request to yourself.");
         }
 
         // Check if any connection exists in either direction to prevent duplicates/cross-requests
@@ -50,14 +89,14 @@ public class ConnectionService {
 
             if ("PENDING".equals(status)) {
                 if (existing.getUserId().equals(userId)) {
-                    throw new IllegalStateException("You have already sent a friend request to this user.");
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You have already sent a friend request to this user.");
                 } else {
-                    throw new IllegalStateException("This user has already sent you a friend request. Please accept it instead.");
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This user has already sent you a friend request. Please accept it instead.");
                 }
             } else if ("ACCEPTED".equals(status)) {
-                throw new IllegalStateException("You are already friends with this user.");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You are already friends with this user.");
             } else if ("BLOCKED".equals(status)) {
-                throw new IllegalStateException("This connection is blocked.");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This connection is blocked.");
             } else if ("REJECTED".equals(status)) {
                 // Re-initiate connection request: set current user as sender
                 existing.setUserId(userId);
@@ -81,16 +120,15 @@ public class ConnectionService {
 
     @Transactional
     public Connection acceptRequest(FriendRequest request) {
-        // request.getFriendId() is the sender of the request, and request.getUserId() is the acceptor.
         Optional<Connection> connectionOptional = connectionRepository.findByUserIdAndFriendId(request.getFriendId(), request.getUserId());
 
         if (connectionOptional.isEmpty()) {
-            throw new RuntimeException("Connection request not found.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Connection request not found.");
         }
 
         Connection connection = connectionOptional.get();
         if (!"PENDING".equals(connection.getStatus())) {
-            throw new IllegalStateException("Cannot accept a connection that is not in PENDING status.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot accept a connection that is not in PENDING status.");
         }
 
         connection.setStatus("ACCEPTED");
@@ -100,16 +138,15 @@ public class ConnectionService {
 
     @Transactional
     public Connection rejectRequest(FriendRequest request) {
-        // request.getFriendId() is the sender of the request, and request.getUserId() is the rejector.
         Optional<Connection> connectionOptional = connectionRepository.findByUserIdAndFriendId(request.getFriendId(), request.getUserId());
 
         if (connectionOptional.isEmpty()) {
-            throw new RuntimeException("Connection request not found.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Connection request not found.");
         }
 
         Connection connection = connectionOptional.get();
         if (!"PENDING".equals(connection.getStatus())) {
-            throw new IllegalStateException("Cannot reject a connection that is not in PENDING status.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reject a connection that is not in PENDING status.");
         }
 
         connection.setStatus("REJECTED");
@@ -123,7 +160,7 @@ public class ConnectionService {
         Long blockedId = request.getFriendId();
 
         if (blockerId.equals(blockedId)) {
-            throw new IllegalArgumentException("You cannot block yourself.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot block yourself.");
         }
 
         // 1. Check existing relationships in both directions
@@ -164,37 +201,50 @@ public class ConnectionService {
 
     @Transactional
     public void unblockUser(FriendRequest request) {
-        // Check for a blocked connection where the requesting user is the blocker (userId)
         Optional<Connection> connectionOptional = connectionRepository.findByUserIdAndFriendId(request.getUserId(), request.getFriendId());
 
         if (connectionOptional.isEmpty() || !"BLOCKED".equals(connectionOptional.get().getStatus())) {
-            throw new IllegalStateException("Blocked connection not found, or you are not authorized to unblock this user.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Blocked connection not found.");
         }
 
         connectionRepository.delete(connectionOptional.get());
     }
 
     @Transactional
-    public Connection updateConnectionStatus(Long id, String status) {
-        Connection connection = connectionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Connection not found with id: " + id));
+    public void unfriend(Long userId, Long friendId) {
+        Optional<Connection> existing = connectionRepository.findByUserIdAndFriendId(userId, friendId)
+                .or(() -> connectionRepository.findByUserIdAndFriendId(friendId, userId));
 
-        connection.setStatus(status);
-        connection.setUpdatedAt(System.currentTimeMillis());
+        Connection conn = existing.filter(c -> "ACCEPTED".equals(c.getStatus()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friendship not found."));
 
-        return connectionRepository.save(connection);
+        connectionRepository.delete(conn);
     }
 
-    @Transactional
-    public void removeConnection(Long id) {
-        if (!connectionRepository.existsById(id)) {
-            throw new RuntimeException("Connection not found with id: " + id);
+    public List<FriendResponse> getBlockedUsers(Long userId) {
+        return connectionRepository.findByUserIdAndStatus(userId, "BLOCKED").stream()
+                .map(c -> buildFriendResponse(c, c.getFriendId(), "BLOCKED"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    public ConnectionStatusResponse getConnectionStatus(Long userId, Long otherUserId) {
+        Optional<Connection> forward = connectionRepository.findByUserIdAndFriendId(userId, otherUserId);
+        if (forward.isPresent()) {
+            String status = forward.get().getStatus();
+            if ("ACCEPTED".equals(status)) return new ConnectionStatusResponse("FRIENDS");
+            if ("PENDING".equals(status)) return new ConnectionStatusResponse("REQUEST_SENT");
+            if ("BLOCKED".equals(status)) return new ConnectionStatusResponse("BLOCKED_BY_ME");
         }
-        connectionRepository.deleteById(id);
+
+        Optional<Connection> reverse = connectionRepository.findByUserIdAndFriendId(otherUserId, userId);
+        if (reverse.isPresent()) {
+            String status = reverse.get().getStatus();
+            if ("PENDING".equals(status)) return new ConnectionStatusResponse("REQUEST_RECEIVED");
+            if ("BLOCKED".equals(status)) return new ConnectionStatusResponse("BLOCKED_BY_THEM");
+        }
+
+        return new ConnectionStatusResponse("NONE");
     }
 
-    public Connection getConnection(Long id) {
-        return connectionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Connection not found with id: " + id));
-    }
 }
